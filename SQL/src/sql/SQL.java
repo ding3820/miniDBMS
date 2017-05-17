@@ -1,3 +1,4 @@
+
 /*
  * To change this license header, choose License Headers in Project Properties.
  * To change this template file, choose Tools | Templates
@@ -22,9 +23,9 @@ import org.apache.commons.lang3.StringUtils;
  * @author shasha1001
  */
 public class SQL {
-
+    
     public static void main(String[] args) {
-
+        
         COutput c = new COutput();
         String command = "sql>";
         String s[] = new String[1000];
@@ -33,28 +34,31 @@ public class SQL {
         String str = null;
         String pr = null;
         CreateTable CT = new CreateTable();
-        boolean flag = false; //check for duplicate
+        
         boolean InsertWithKey = false;
+        boolean Index = false;
+        ListMultimap<String, String> index_attri = ArrayListMultimap.create(); //key:table, values:atrribute for indexing
 
         Map<String, ListMultimap<String, String>> map = new HashMap<>();
+        Map<String, Hashtable<String, List<String>>> Hashing = new HashMap<>();// key:table name     value:Hashing 
 
-        String regEx = "[`~!@#$%^&()+=|{}':',\\[\\]/?~！@#￥%……&（）——+|{}【】『：」「』。，、？_]";  // delete *
+        String regEx = "[`~!@#$%^&()+=|{}':',\\[\\]/?~！@#￥%……&（）——+|{}【】『：」「』。，、？]";  // delete *
         Pattern p = Pattern.compile(regEx);
 
         //words put into array
         while (true) {
-
+            
             int i = 0, j = 0, k = 0, l = 0;
             int temp = 0, index = 0;
             int cal = 0;
-            flag = false;
+            boolean flag = false;
             InsertWithKey = false;
             boolean samekey = false;
             boolean error = false;
             Arrays.fill(s, null);
             System.out.print(command);
             //preprocessing: put words in array, ; deletion
-            while (true) {   //�L���j��
+            while (true) {
                 s[i] = sc.next();
                 last_w = String.valueOf(s[i].charAt(s[i].length() - 1));
                 // ;-->"  "
@@ -102,7 +106,7 @@ public class SQL {
                             }
                         }
                         s[j] = null;
-
+                        
                     }
                 }
                 /*
@@ -114,14 +118,14 @@ public class SQL {
                     System.out.println("SQL syntax error! Losing left parenthesis...");
                     break;
                 }*/
-
+                
                 for (j = 0; s[j] != null; j++) {
                     if (s[j].equalsIgnoreCase("VALUES")) {
                         if (!s[j + 1].contains("(")) {
                             System.out.println("SQL syntax error! Losing left parenthesis...");
                             break;
                         }
-
+                        
                     }
                 }
                 if (s[0].equalsIgnoreCase("CREATE") && s[k - 2].contains(",") || s[k - 1].contains(",")) {
@@ -148,9 +152,14 @@ public class SQL {
                         }
                     }
                 }
+
                 // handle case like: '  John Snow  ' 
+                int countdot = 0;
                 for (j = 0; s[j] != null; j++) {
-                    if (String.valueOf(s[j].charAt(0)).equals("'") && s[j].length() == 1) {
+                    if (s[j].contains("'")) {
+                        countdot++;
+                    }
+                    if (String.valueOf(s[j].charAt(0)).equals("'") && s[j].length() == 1 && countdot == 1) {
                         for (k = j; s[k + 1] != null; k++) {
                             if (k == j) {
                                 s[k] = s[k] + s[k + 1];
@@ -161,7 +170,18 @@ public class SQL {
                         }
                         s[k] = null;
                     }
-
+                    if (String.valueOf(s[j].charAt(0)).equals("'") && s[j].length() == 1 && countdot == 2) {
+                        for (k = j; s[k - 1] != null; k++) {
+                            if (k == j) {
+                                s[k - 1] = s[k - 1] + s[k];
+                            }
+                            else {
+                                s[k - 1] = s[k];
+                            }
+                        }
+                        s[k] = null;
+                    }
+                    
                 }
                 // handle case like: 'John Snow' 
                 String cache;
@@ -201,7 +221,7 @@ public class SQL {
                 }
                 for (j = 0; s[j] != null; j++) {
                     if (s[j].equalsIgnoreCase("PRIMARY") && s[j + 1].equalsIgnoreCase("KEY")) {
- 
+                        
                         for (k = j; s[k + 2] != null; k++) {
                             if (k == j) {
                                 s[k - 1] = s[k - 1] + "*";
@@ -223,21 +243,25 @@ public class SQL {
                     break;
                 }
                 else {
-                    for (j = 0; s[j] != null; j++) {
+                    /*for (j = 0; s[j] != null; j++) {
                         System.out.println(s[j]);
-                    }
+                    }*/
+                    
                     //Syntax c.correct, action.
                     try {
-
+                        
                         ListMultimap<String, String> newmap = ArrayListMultimap.create();
                         MyLinkedMap<String, String> tables = new MyLinkedMap<>(); // name and alias
                         int aggrenum = 0;
-                       
+                        
                         ListMultimap<String, String> SelAtr = ArrayListMultimap.create(); // index,  <selected attributes, table>
                         List<String> coltitle = new ArrayList<String>();
-
+                        
                         MyLinkedMap<String, Integer> syntax = new MyLinkedMap<>();
+                        
+                        Map<String, BTree<String, List<String>>> BT = new HashMap<>();         // key:index name     value:Btree 
 
+                        //Hashtable<String, List<String>> ht = new Hashtable<>();
                         //indexes of syntax
                         int from = 0; //index of FROM
                         int where = 0;
@@ -246,10 +270,278 @@ public class SQL {
                         boolean innerJoin = false;
                         String key = null;
                         boolean ambuguous = false;
-
                         c.aggre_b = false;
+                        
+                        if (s[0].equalsIgnoreCase("CREATE") && s[1].equalsIgnoreCase("INDEX")) {
+                            //s[2]: index name
+                            //s[4]: table name
+                            //s[5]: attribute
+                            Index = true;
+                            for (i = 0; s[i] != null; i++) {
+                                if (s[i + 1] == null) {
+                                    break;
+                                }
+                            }
+                            if (s[i].equalsIgnoreCase("BTREE")) {
+                                BTree<String, List<String>> tree = new BTree<>();
+                                
+                                List<String> tuple = new ArrayList<>();
+                                String attriName = null;
+                                String temp_tupleData = null;
+                                
+                                for (i = 0; i < map.get(s[4]).get("attribute").size(); i++) {
+                                    if (map.get(s[4]).get("attribute").get(i).contains(s[5])) {
+                                        attriName = map.get(s[4]).get("attribute").get(i);
+                                        break;
+                                    }
+                                }
+                                index_attri.put(s[4], attriName + "-btree");
+                                //System.out.println(tree.height());
+                                if (attriName != null) {
+                                    for (i = 0; i < map.get(s[4]).get(attriName).size(); i++) {
+                                        List<String> tempList = new ArrayList<>();
+                                        for (j = 0; j < map.get(s[4]).get("attribute").size(); j++) {
+                                            
+                                            temp_tupleData = map.get(s[4]).get(map.get(s[4]).get("attribute").get(j)).get(i);
+                                            tempList.add(temp_tupleData);
+                                            
+                                        }
+                                        tree.put(String.valueOf(map.get(s[4]).get(attriName).get(i)), tempList);
+                                        tuple.add(String.valueOf(map.get(s[4]).get(attriName).get(i)));
+                                    }
+                                    
+                                    Collections.sort(tuple);
+                                    BT.put(s[2], tree);
+                                    System.out.println("tuple: " + tuple);
+                                    /*for(i=0; i<map.get(s[4]).get(attriName).size(); i++){
+                                        System.out.println("tree: "+ tree.get(tuple.get(i)));
+                                    }*/
+                                }
+                                else {
+                                    System.out.println("Wrong attribute");
+                                }
+                            }
+                            else if (s[i].equalsIgnoreCase("HASHING")) {
+                                Hashtable<String, List<String>> ht = new Hashtable<>();    //key:index value: data
 
-                        if (s[0].equalsIgnoreCase("SELECT")) {
+                                String attriName = null;
+                                String temp_tupleData = null;
+                                
+                                for (i = 0; i < map.get(s[4]).get("attribute").size(); i++) {
+                                    if (map.get(s[4]).get("attribute").get(i).contains(s[5])) {
+                                        attriName = map.get(s[4]).get("attribute").get(i);
+                                        break;
+                                    }
+                                }
+                                index_attri.put(s[4], attriName);
+                                
+                                if (attriName != null) {
+                                    for (i = 0; i < map.get(s[4]).get(attriName).size(); i++) {
+                                        List<String> tempList = new ArrayList<>();
+                                        for (j = 0; j < map.get(s[4]).get("attribute").size(); j++) {
+                                            temp_tupleData = map.get(s[4]).get(map.get(s[4]).get("attribute").get(j)).get(i);
+                                            tempList.add(temp_tupleData);
+                                        }
+                                        //System.out.println("key is: "+map.get(s[4]).get(attriName).get(i));
+                                        ht.put(map.get(s[4]).get(attriName).get(i), tempList);
+                                    }
+                                    //System.out.println("table is: " + s[4]);
+                                    Hashing.put(s[4], ht);
+                                    for (i = 0; i < map.get(s[4]).get(attriName).size(); i++) {
+                                        System.out.println("hashing: " + ht.get(map.get(s[4]).get(attriName).get(i)));
+                                    }
+                                }
+                                else {
+                                    System.out.println("Wrong attribute");
+                                }
+                            }
+                            //System.out.println("Hashing: " + Hashing);
+                        }
+                        else if (s[0].equalsIgnoreCase("SELECT") && Index) {
+                            long start = System.currentTimeMillis();
+                            //map:syntax (FROM, index in s[]) (Select From As Where)
+                            String table[] = new String[2];
+                            String target = null;      //target attibute
+                            String targetTable = null; //target's table
+                            int targetNum = -1;
+                            for (i = 0; s[i] != null; i++) {
+                                if (s[i].equalsIgnoreCase("FROM")) {
+                                    from = i;
+                                    table[0] = s[i + 1];
+                                    table[1] = s[i + 2];
+                                    //syntax.put("FROM", from);
+                                }
+                                else if (s[i].equalsIgnoreCase("WHERE")) {
+                                    where = i;
+                                    //syntax.put("WHERE", where);
+                                }
+                            }
+                            if (s[1].contains("SUM") || s[1].contains("COUNT")) {
+                                if (s[1].contains(".")) {
+                                    target = s[1].substring(s[1].indexOf(".") + 1, s[1].length() - 1);
+                                    targetTable = s[1].substring(s[1].indexOf("(") + 1, s[1].indexOf("."));
+                                    //System.out.println("targetTable:" + targetTable);
+                                }
+                                else {
+                                    target = s[1].substring(s[1].indexOf("(") + 1, s[1].length() - 1);
+                                    
+                                    for (j = from + 1; j < where; j++) {
+                                        //System.out.println("s----:" + s[j]);
+                                        //System.out.println(map.get(s[j]).get("attribute").size());
+                                        for (k = 0; k < map.get(s[j]).get("attribute").size(); k++) {
+                                            //System.out.println(map.get(s[j]).get("attribute").get(k));
+                                            if (map.get(s[j]).get("attribute").get(k).contains(target)) {
+                                                targetTable = s[j];
+                                                //System.out.println("targetTable:" + targetTable);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            for (i = 0; i < map.get(targetTable).get("attribute").size(); i++) {
+                                if (map.get(targetTable).get("attribute").get(i).contains(target)) {
+                                    target = map.get(targetTable).get("attribute").get(i);
+                                    targetNum = i;
+                                    break;
+                                }
+                            }
+                            //System.out.println("targetNum:" + targetNum);
+                            //System.out.println("targetTable:" + targetTable);
+                            //System.out.println("target:" + target);
+                            String tempTable = null;
+                            String tempAtrri = null;
+                            List<String> pos = new ArrayList<>();
+                            int numOfAttri = -1;    //order of temp attribute
+                            i = where + 1;
+                            //System.out.println("i:" + i);
+
+                            if (s[i].contains(".")) {
+                                tempTable = s[i].substring(0, s[i].indexOf("."));
+                                for (j = 0; j < map.get(tempTable).get("attribute").size(); j++) {
+                                    if (map.get(tempTable).get("attribute").get(j).contains(s[i].substring(s[i].indexOf(".") + 1, s[i].length()))) {
+                                        numOfAttri = map.get(tempTable).get("attribute").indexOf(map.get(tempTable).get("attribute").get(j));
+                                        tempAtrri = map.get(tempTable).get("attribute").get(j);
+                                        //System.out.println("tempTable:" + tempTable);
+                                        //System.out.println("tempAtrri:" + tempAtrri);
+                                        //System.out.println("numOfAttri:" + numOfAttri);
+                                        break;
+                                    }
+                                }
+                            }
+                            else {
+                                for (j = from + 1; j < where; j++) {    //table
+                                    for (k = 0; k < map.get(s[j]).get("attribute").size(); k++) {   //atrribute
+                                        if (map.get(s[j]).get("attribute").get(k).contains(s[i])) {
+                                            numOfAttri = map.get(s[j]).get("attribute").indexOf(map.get(s[j]).get("attribute").get(k));
+                                            tempAtrri = map.get(s[j]).get("attribute").get(k);
+                                            tempTable = s[j];
+                                            //System.out.println("tempTable:" + tempTable);
+                                            //System.out.println("tempAtrri:" + tempAtrri);
+                                            //System.out.println("numOfAttri:" + numOfAttri);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            switch (s[i + 1]) {
+                                case ">":
+                                    for (j = 0; j < map.get(tempTable).get(tempAtrri).size(); j++) {
+                                        if (Integer.parseInt(map.get(tempTable).get(tempAtrri).get(j)) > Integer.parseInt(s[i + 2])) {
+                                            //System.out.println("record:" + map.get(tempTable).get(tempAtrri).get(j));
+                                            pos.add(map.get(tempTable).get(index_attri.get(tempTable).get(0)).get(j));
+                                            //index list
+                                        }
+                                    }
+                                    break;
+                                case "<":
+                                    for (j = 0; j < map.get(tempTable).get(tempAtrri).size(); j++) {
+                                        
+                                        if (Integer.parseInt(map.get(tempTable).get(tempAtrri).get(j)) < Integer.parseInt(s[i + 2])) {
+                                            //System.out.println("record:" + map.get(tempTable).get(tempAtrri).get(j));
+                                            pos.add(map.get(tempTable).get(index_attri.get(tempTable).get(0)).get(j));
+                                        }
+                                    }
+                                    break;
+                                case "=":
+                                    for (j = 0; j < map.get(tempTable).get(tempAtrri).size(); j++) {
+                                        if (Integer.parseInt(map.get(tempTable).get(tempAtrri).get(j)) == Integer.parseInt(s[i + 2])) {
+                                            //System.out.println("record:" + map.get(tempTable).get(tempAtrri).get(j));
+                                            pos.add(map.get(tempTable).get(index_attri.get(tempTable).get(0)).get(j));
+                                        }
+                                    }
+                                    break;
+                                case "!=":
+                                    for (j = 0; j < map.get(tempTable).get(tempAtrri).size(); j++) {
+                                        if (Integer.parseInt(map.get(tempTable).get(tempAtrri).get(j)) != Integer.parseInt(s[i + 2])) {
+                                            //.out.println("record:" + map.get(tempTable).get(tempAtrri).get(j));
+                                            pos.add(map.get(tempTable).get(index_attri.get(tempTable).get(0)).get(j));
+                                        }
+                                    }
+                                    break;
+                            }
+                            
+                            //System.out.println("pos:" + pos);
+                            //todo
+                            if (s[1].contains("SUM")) {
+                                int sum = 0;
+                                if (tempTable.equals(table[0])) {
+                                    for (i = 0; i < pos.size(); i++) {
+                                        String temp1 = Hashing.get(tempTable).get(pos.get(i)).get(Hashing.get(tempTable).get(pos.get(i)).size() - 1);
+                                        //System.out.println("foreign key:" + temp1);
+                                        if (Hashing.get(targetTable).get(temp1) != null) {
+                                            sum += Integer.parseInt(Hashing.get(targetTable).get(temp1).get(targetNum));
+                                        }
+                                    }
+                                }
+                                else if (tempTable.equals(table[1])) {
+                                    Set<String> keys = Hashing.get(table[0]).keySet();
+                                    Iterator<String> itr = keys.iterator();
+                                    while (itr.hasNext()) {
+                                        str = itr.next();
+                                        //System.out.println("str:" + str);
+                                        //System.out.println("---" + Hashing.get(table[0]).get(str).get(Hashing.get(table[0]).get(str).size() - 1));
+                                        if (pos.contains(Hashing.get(table[0]).get(str).get(Hashing.get(table[0]).get(str).size() - 1))) {
+                                            //System.out.println("num: " + Hashing.get(targetTable).get(str).get(targetNum));
+                                            sum += Integer.parseInt(Hashing.get(targetTable).get(str).get(targetNum));
+                                        }
+                                    }
+                                }
+                                System.out.println("------------------------------------------------------");
+                                System.out.println("sum:" + sum);
+                                System.out.println("Time cost with select: " + (System.currentTimeMillis() - start));
+                            }
+                            else if (s[1].contains("COUNT")) {
+                                int count = 0;
+                                if (tempTable.equals(table[0])) {
+                                    for (i = 0; i < pos.size(); i++) {
+                                        String temp1 = Hashing.get(tempTable).get(pos.get(i)).get(Hashing.get(tempTable).get(pos.get(i)).size() - 1);
+                                        //System.out.println("foreign key:" + temp1);
+                                        if (Hashing.get(targetTable).get(temp1) != null) {
+                                            count++;
+                                        }
+                                    }
+                                }
+                                else if (tempTable.equals(table[1])) {
+                                    Set<String> keys = Hashing.get(table[0]).keySet();
+                                    Iterator<String> itr = keys.iterator();
+                                    while (itr.hasNext()) {
+                                        str = itr.next();
+                                        //System.out.println("str:" + str);
+                                        //System.out.println("---" + Hashing.get(table[0]).get(str).get(Hashing.get(table[0]).get(str).size() - 1));
+                                        if (pos.contains(Hashing.get(table[0]).get(str).get(Hashing.get(table[0]).get(str).size() - 1))) {
+                                            //System.out.println("num: " + Hashing.get(targetTable).get(str).get(targetNum));
+                                            count++;
+                                        }
+                                    }
+                                }
+                                System.out.println("------------------------------------------------------");
+                                System.out.println("count:" + count);
+                                System.out.println("Time cost with select: " + (System.currentTimeMillis() - start));
+                            }
+                        }
+                        else if (s[0].equalsIgnoreCase("SELECT") && !Index) {
 
                             //map:syntax (FROM, index in s[]) (Se Fr As Wh)
                             for (i = 0; s[i] != null; i++) {
@@ -267,14 +559,14 @@ public class SQL {
                                     as_n++;
                                 }
                             }
-
+                            
                             for (i = 1; i < from; i++) { //select
                                 if (!s[i].contains(".") && (where - from) > 1) {
                                     System.out.println(map.get(s[from + 1]).get("attribute").size());
                                     for (j = 0; j < map.get(s[from + 1]).get("attribute").size(); j++) {
                                         if (map.get(s[from + 1]).get("attribute").get(j).contains(s[i])) {
                                             for (k = 0; k < map.get(s[from + 2]).get("attribute").size(); k++) {
-                                                if (map.get(s[from + 2]).get("attribute").get(k).contains(s[i])){
+                                                if (map.get(s[from + 2]).get("attribute").get(k).contains(s[i])) {
                                                     System.out.println("Ambuguous Input!!");
                                                     ambuguous = true;
                                                     break;
@@ -284,7 +576,7 @@ public class SQL {
                                     }
                                 }
                             }
-                            if(ambuguous){
+                            if (ambuguous) {
                                 break;
                             }
 
@@ -339,16 +631,16 @@ public class SQL {
                                 }
                                 System.out.println(c.aggre_b);
                                 System.out.println("Im here1");
-
+                                
                                 c.atri(s, i, tables, map);
                                 System.out.println("Im here2");
                                 table1 = c.table;
                                 System.out.println("table1:" + table1);
                                 attribute1 = c.attribute;
                                 System.out.println("attribute1:" + attribute1);
-
+                                
                                 if (attribute1.equals("*")) {
-
+                                    
                                     for (k = 0; k < map.get(c.table).get("attribute").size(); k++) {
                                         SelAtr.put(c.table, map.get(c.table).get("attribute").get(k));
                                         String coll;
@@ -366,7 +658,7 @@ public class SQL {
                                     for (j = 0; j < map.get(table1).get("attribute").size(); j++) {
                                         //System.out.println("000000000000" + map.get(table1).get("attribute").get(j));
                                         if (map.get(table1).get("attribute").get(j).contains(attribute1)) {
-
+                                            
                                             SelAtr.put(table1, map.get(table1).get("attribute").get(j));
                                             coltitle.add(attribute1);
                                         }
@@ -377,14 +669,14 @@ public class SQL {
                             System.out.println(SelAtr);
                             System.out.println(coltitle);
                             System.out.println("Im here1");
-
+                            
                             boolean compare = false;
                             // if there is no WHERE clause, set the c.correct
                             if (where == 0) {
                                 System.out.println("im here in where");
                                 String atriTemp;
                                 String table_0 = tables.getKey(0);
-
+                                
                                 atriTemp = map.get(table_0).get("attribute").get(0);
                                 for (i = 0; i < map.get(table_0).get(atriTemp).size(); i++) {
                                     c.correct.add(i);
@@ -402,9 +694,9 @@ public class SQL {
                                 boolean andor = false;
                                 boolean and = false;
                                 boolean or = false;
-
+                                
                                 int mapcount;
-
+                                
                                 for (i = where + 1; s[i] != null; i = i + 4) { //i=s[], start from where
                                     System.out.println("--------------------" + i);
                                     /*1*/
@@ -425,7 +717,7 @@ public class SQL {
                                         }
                                     }
                                     System.out.println("Im here 2");
-
+                                    
                                     c.atri(s, i, tables, map);
                                     table1 = c.table;
                                     attribute1 = c.attribute;
@@ -439,7 +731,7 @@ public class SQL {
                                     /*3*/ //third
                                     third = s[i + 2];
                                     System.out.println("third:" + third);
-
+                                    
                                     for (mapcount = 0; mapcount < map.get(table1).get("attribute").size(); mapcount++) {
                                         if (map.get(table1).get("attribute").get(mapcount).contains(attribute1)) {
                                             System.out.println(map.get(table1).get("attribute").get(mapcount));
@@ -451,9 +743,9 @@ public class SQL {
                                     //System.out.println("at_size:" + at_size);
                                     /*case 1*/ //+num 
                                     if (StringUtils.isNumeric(third)) {
-
+                                        
                                         System.out.println("im here 3" + map.get(table1).get("attribute").get(mapcount));
-
+                                        
                                         int num = Integer.valueOf(third); // the number
 
                                         switch (opt) {
@@ -491,14 +783,14 @@ public class SQL {
                                             default:
                                                 break;
                                         }
-
+                                        
                                     }// end if third = integer
 
                                     /*case 2*/ //+string 
                                     else if (!third.contains(".") && !StringUtils.isNumeric(third)) {
-
+                                        
                                         System.out.println("In case 2----------------");
-
+                                        
                                         third = third.substring(1, third.length() - 1);
                                         System.out.println("third:" + third);
                                         if (opt.equals("<>")) {
@@ -509,11 +801,11 @@ public class SQL {
                                             }
                                         }
                                         else if (opt.equals("=")) {
-
+                                            
                                             for (j = 0; j < map.get(table1).get(map.get(table1).get("attribute").get(mapcount)).size(); j++) {
                                                 System.out.println(map.get(table1).get(map.get(table1).get("attribute").get(mapcount)).get(j));
                                                 if (map.get(table1).get(map.get(table1).get("attribute").get(mapcount)).get(j).equals(third)) {
-
+                                                    
                                                     c.COutput(map, table1, j, tables, compare);
                                                 }
                                             }
@@ -524,16 +816,16 @@ public class SQL {
                                         //String table2, attribute2;
                                         //process third dot
                                         c.atri(s, i, tables, map);
-
+                                        
                                         innerJoin = true;
                                         key = s[i].substring(s[i].indexOf(".") + 1, s[i].length());
                                         System.out.println("XXXXXXXXXXXXXXX:" + key);
-
+                                        
                                     }
-
+                                    
                                     System.out.println(c.correct);
                                     System.out.println(c.correct2);
-
+                                    
                                     if (compare) {
                                         if (and && !innerJoin) {
                                             c.correct.retainAll(c.correct2);
@@ -541,7 +833,7 @@ public class SQL {
                                             hs.addAll(c.correct);
                                             c.correct.clear();
                                             c.correct.addAll(hs);
-
+                                            
                                         }
                                         else if (or && !innerJoin) {
                                             c.correct.addAll(c.correct2);
@@ -552,7 +844,7 @@ public class SQL {
                                         }
                                     }
                                     System.out.println(c.correct);
-
+                                    
                                     if (andor) {
                                         compare = true;
                                     }
@@ -563,9 +855,9 @@ public class SQL {
                                     System.out.println("OR:" + or);
                                     System.out.println("andor:" + andor);
                                     System.out.println("compare:" + compare);
-
+                                    
                                 }
-
+                                
                                 if (c.aggre_b == true) {
                                     if (c.aggre.equalsIgnoreCase("COUNT")) {
                                         if (c.table.equals(tables.getKey(0))) {
@@ -603,7 +895,7 @@ public class SQL {
                             //System.out.println("table" + c.table);
                             System.out.println("-----------------------------------------------------------");
                             String tab;
-
+                            
                             if (innerJoin) {
                                 String biggerTable, smalTable, temp1;
                                 String attiTemp1 = null, attiTemp2 = null;
@@ -613,7 +905,7 @@ public class SQL {
                                 else {
                                     tab = tables.getKey(0);
                                 }
-
+                                
                                 for (i = 0; i < map.get(c.table).get("attribute").size(); i++) {
                                     //System.out.println("key:" + map.get(c.table).get("attribute").get(i));
                                     if (map.get(c.table).get("attribute").get(i).contains(key)) {
@@ -680,13 +972,13 @@ public class SQL {
                                         }*/
                                     }
                                     else {
-
+                                        
                                         c.correct.clear();
                                         List<Integer> tempList = new ArrayList<>();
                                         //System.out.println("c.correct2.size():"+c.correct2.size());
                                         for (i = 0; i < map.get(biggerTable).get(attiTemp1).size(); i++) {
                                             for (j = 0; j < c.correct2.size(); j++) {
-
+                                                
                                                 if (map.get(biggerTable).get(attiTemp1).get(i).equals(map.get(smalTable).get(attiTemp2).get(c.correct2.get(j)))) {
                                                     c.correct.add(i);
                                                     tempList.add(c.correct2.get(j));
@@ -694,7 +986,7 @@ public class SQL {
                                                 }
                                             }
                                         }
-
+                                        
                                         for (k = 0; k < c.correct.size(); k++) {
                                             for (j = 0; j < SelAtr.get(biggerTable).size(); j++) {
                                                 System.out.format("%30s", map.get(biggerTable).get(SelAtr.get(biggerTable).get(j)).get(c.correct.get(k)));
@@ -707,9 +999,9 @@ public class SQL {
                                     }
                                 }
                                 else {
-
+                                    
                                     if (!compare) {
-
+                                        
                                         for (i = 0; i < c.correct.size(); i++) {
                                             for (j = 0; j < map.get(smalTable).get(attiTemp2).size(); j++) {
                                                 if (map.get(biggerTable).get(attiTemp1).get(i).equals(map.get(smalTable).get(attiTemp2).get(c.correct.get(j)))) {
@@ -732,7 +1024,7 @@ public class SQL {
                                             }
                                             System.out.println();
                                         }
-
+                                        
                                     }
                                     else {
                                         if (c.table.equals(biggerTable)) {
@@ -752,10 +1044,10 @@ public class SQL {
                                                 }
                                                 System.out.println();
                                             }
-
+                                            
                                         }
                                         else {
-
+                                            
                                             c.correct.clear();
                                             List<Integer> tempList = new ArrayList<>();
                                             //System.out.println("c.correct2.size():"+c.correct2.size());
@@ -776,7 +1068,7 @@ public class SQL {
                                             }
                                             System.out.println(c.correct);
                                             System.out.println(tempList);
-
+                                            
                                             for (k = 0; k < c.correct.size(); k++) {
                                                 for (j = 0; j < SelAtr.get(biggerTable).size(); j++) {
                                                     System.out.format("%30s", map.get(biggerTable).get(SelAtr.get(biggerTable).get(j)).get(c.correct.get(k)));
@@ -787,7 +1079,7 @@ public class SQL {
                                                 System.out.println();
                                             }
                                         }
-
+                                        
                                     }
                                     /*for (k = 0; k < c.correct.size(); k++) {
                                         if (c.table.equals(stringArray[0])) {
@@ -830,14 +1122,14 @@ public class SQL {
                             else {
                                 System.out.println(c.correct.size());
                             }
-
+                            
                             c.correct.clear();
                             c.correct2.clear();
 
                             //create table, insert values
                         }
                         else if (s[0].equalsIgnoreCase("CREATE") && s[1].equalsIgnoreCase("TABLE")) {
-
+                            
                             if (!map.containsKey(s[2])) {
                                 map.put(s[2], CT.Create(s));
                                 System.out.println("Table [" + s[2] + "] has been created successfully\n");
@@ -848,9 +1140,9 @@ public class SQL {
                             break;
                         }
                         else if (s[0].equalsIgnoreCase("INSERT") && s[1].equalsIgnoreCase("INTO")) {
-
+                            
                             if (map.containsKey(s[2])) {
-
+                                
                                 for (i = 0; i < map.get(s[2]).get("attribute").size(); i++) {
                                     if (map.get(s[2]).get("attribute").get(i).contains("*")) {
                                         InsertWithKey = true;
@@ -858,10 +1150,10 @@ public class SQL {
                                     }
                                 }
                                 if (!InsertWithKey) {
-
+                                    
                                     if (s[3].equalsIgnoreCase("VALUES")) {
                                         int attri_count = map.get(s[2]).get("attribute").size();
-
+                                        
                                         for (j = 4, k = 0; s[j] != null; j++, k++) {
                                             //System.out.println("attribute: " + (map.get(s[2]).get("attribute")).get(k));
                                             //System.out.println("data: " + s[j]);
@@ -875,10 +1167,19 @@ public class SQL {
                                                 }
                                             }
                                             else {
-                                                if (!StringUtils.isNumeric(s[j])) {
-                                                    System.out.println(s[j] + " not in int type");
-                                                    error = true;
-                                                    break;
+                                                if (s[j].charAt(0) == '-') {
+                                                    if (!StringUtils.isNumeric(s[j].substring(1))) {
+                                                        System.out.println(s[j] + " not in int type");
+                                                        error = true;
+                                                        break;
+                                                    }
+                                                }
+                                                else {
+                                                    if (!StringUtils.isNumeric(s[j])) {
+                                                        System.out.println(s[j] + " not in int type");
+                                                        error = true;
+                                                        break;
+                                                    }
                                                 }
                                             }
                                         }
@@ -888,7 +1189,7 @@ public class SQL {
                                                 System.out.println("data: " + s[j]);
                                                 map.get(s[2]).put((map.get(s[2]).get("attribute")).get(k), s[j]);
                                             }
-
+                                            
                                             for (k = 0; k < attri_count; k++) {
                                                 System.out.println("attribute: " + (map.get(s[2]).get("attribute")).get(k));
                                                 str = map.get(s[2]).get("attribute").get(k);
@@ -903,7 +1204,7 @@ public class SQL {
                                                 break;
                                             }
                                         }
-
+                                        
                                         for (j = 3, k = i + 1; !s[j].equalsIgnoreCase("VALUES"); j++, k++) {
                                             //System.out.println("attribute: " + s[j]);
                                             //System.out.println("data: " + s[k]);
@@ -924,10 +1225,20 @@ public class SQL {
                                                 }
                                             }
                                             else {
-                                                if (!StringUtils.isNumeric(s[k])) {
-                                                    System.out.println(s[k] + " not in int type");
-                                                    error = true;
-                                                    break;
+                                                if (s[k].charAt(0) == '-') {
+                                                    if (!StringUtils.isNumeric(s[k].substring(1))) {
+                                                        System.out.println(s[k] + " not in int type");
+                                                        error = true;
+                                                        break;
+                                                    }
+                                                }
+                                                
+                                                else {
+                                                    if (!StringUtils.isNumeric(s[k])) {
+                                                        System.out.println(s[k] + " not in int type");
+                                                        error = true;
+                                                        break;
+                                                    }
                                                 }
                                             }
                                         }
@@ -944,7 +1255,7 @@ public class SQL {
                                                 }
                                                 map.get(s[2]).put(str, s[k]);
                                             }
-
+                                            
                                             for (k = 0; k < attri_count; k++) {
                                                 System.out.println("attribute: " + (map.get(s[2]).get("attribute")).get(k));
                                                 str = map.get(s[2]).get("attribute").get(k);
@@ -955,7 +1266,7 @@ public class SQL {
                                 } // PR
                                 else {
                                     if (s[3].equalsIgnoreCase("VALUES")) {
-
+                                        
                                         int attri_count = map.get(s[2]).get("attribute").size();
 
                                         //find primary key
@@ -965,7 +1276,7 @@ public class SQL {
                                                 break;
                                             }
                                         }
-
+                                        
                                         for (j = 0; j < map.get(s[2]).get(pr).size(); j++) {
                                             if (s[4 + i].equals(map.get(s[2]).get(pr).get(j))) {
                                                 samekey = true;
@@ -987,10 +1298,19 @@ public class SQL {
                                                     }
                                                 }
                                                 else {
-                                                    if (!StringUtils.isNumeric(s[j])) {
-                                                        System.out.println(s[j] + " not in int type");
-                                                        error = true;
-                                                        break;
+                                                    if (s[j].charAt(0) == '-') {
+                                                        if (!StringUtils.isNumeric(s[j])) {
+                                                            System.out.println(s[j] + " not in int type");
+                                                            error = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                    else {
+                                                        if (!StringUtils.isNumeric(s[j].substring(1))) {
+                                                            System.out.println(s[j] + " not in int type");
+                                                            error = true;
+                                                            break;
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1000,16 +1320,16 @@ public class SQL {
                                                     System.out.println("data: " + s[j]);
                                                     map.get(s[2]).put((map.get(s[2]).get("attribute")).get(k), s[j]);
                                                 }
-
+                                                
                                                 for (k = 0; k < attri_count; k++) {
                                                     System.out.println("attribute: " + (map.get(s[2]).get("attribute")).get(k));
                                                     str = map.get(s[2]).get("attribute").get(k);
                                                     System.out.println(map.get(s[2]).get(str));
                                                 }
-
+                                                
                                             }
                                         }
-
+                                        
                                     }
                                     else {
                                         int attri_count = map.get(s[2]).get("attribute").size();
@@ -1024,16 +1344,15 @@ public class SQL {
                                                 break;
                                             }
                                         }
-
+                                        
                                         for (j = 3; j < l; j++) {
                                             System.out.println(pr.substring(0, pr.length() - 1));
                                             System.out.println(s[j]);
                                             if (pr.contains(s[j])) {
-
                                                 break;
                                             }
                                         }
-
+                                        
                                         for (k = 0; k < map.get(s[2]).get(pr).size(); k++) {
                                             if (s[j - 2 + l].equals(map.get(s[2]).get(pr).get(k))) {
                                                 samekey = true;
@@ -1042,9 +1361,9 @@ public class SQL {
                                             }
                                         }
                                         if (samekey == false) {
-
+                                            
                                             for (j = 3, k = l + 1; !s[j].equalsIgnoreCase("VALUES"); j++, k++) {
-                                                ///System.out.println("attribute: " + s[j]);
+                                                //System.out.println("attribute: " + s[j]);
                                                 //System.out.println("data: " + s[k]);
                                                 for (int n = 0; n < attri_count; n++) {
                                                     str = map.get(s[2]).get("attribute").get(n);
@@ -1063,10 +1382,19 @@ public class SQL {
                                                     }
                                                 }
                                                 else {
-                                                    if (!StringUtils.isNumeric(s[k])) {
-                                                        System.out.println(s[k] + " not in int type");
-                                                        error = true;
-                                                        break;
+                                                    if (s[k].charAt(0) == '-') {
+                                                        if (!StringUtils.isNumeric(s[k].substring(1))) {
+                                                            System.out.println(s[k] + " not in int type");
+                                                            error = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                    else {
+                                                        if (!StringUtils.isNumeric(s[k])) {
+                                                            System.out.println(s[k] + " not in int type");
+                                                            error = true;
+                                                            break;
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1097,9 +1425,9 @@ public class SQL {
                                 System.out.println("No such table");
                             }
                         }
-
+                        
                         break;
-
+                        
                     }
                     catch (Exception e) {
                         System.out.println(e.getClass().getCanonicalName());
